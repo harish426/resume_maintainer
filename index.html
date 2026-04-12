@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Apply v2.0</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="header">
+            <h1 class="logo">Auto Apply</h1>
+            <button id="settingsButton" class="settings-button">⚙️</button>
+        </div>
+
+        <!-- Home View -->
+        <div id="homeView">
+            <div class="form-container">
+                <div class="form-field">
+                    <label for="descriptionInput">Job Description</label>
+                    <textarea id="descriptionInput" placeholder="Paste the job description here..."></textarea>
+                </div>
+                <div class="form-field">
+                    <label for="questionInput">What do you want to generate?</label>
+                    <input type="text" id="questionInput" placeholder="e.g., 'Tailor' or 'Write cover letter'">
+                </div>
+                <div class="form-field-row">
+                    <div class="form-field half">
+                        <label for="companyInput">Company Name</label>
+                        <input type="text" id="companyInput" placeholder="e.g., Google">
+                    </div>
+                    <div class="form-field half">
+                        <label for="positionInput">Position Name</label>
+                        <input type="text" id="positionInput" placeholder="e.g., AI Engineer">
+                    </div>
+                </div>
+                <button id="submitButton" class="submit-button">Generate with Gemini</button>
+            </div>
+            <div id="statusMessage" class="status-message"></div>
+            <div id="resultContainer" class="result-container" style="display: none;"></div>
+        </div>
+
+        <!-- Settings View -->
+        <div id="settingsView" class="hidden">
+            <h2 class="view-title">Settings</h2>
+            <div class="form-field">
+                <label for="apiKeyInput">Gemini API Key</label>
+                <input type="password" id="apiKeyInput" placeholder="AIzaSy...">
+                <p class="hint">Your key is stored locally in your browser.</p>
+            </div>
+            <button id="saveSettings" class="submit-button">Save & Return</button>
+        </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+{
+  "personal_info": {
+    "name": "Harish Jamallamudi",
+    "email": "harishjamallamudi426@gmail.com",
+    "phone": "314-599-6836",
+    "linkedin": "http://www.linkedin.com/in/harish-jama",
+    "github": "https://github.com/harish426",
+    "portfolio": "https://portfolio-service-4e5mn4pudq-uc.a.run.app/"
+  },
+  "technologies": {
+    "Programming": [
+      "Python",
+      "Java",
+      "C++",
+      "SQL",
+      "R"
+    ],
+    "Web Development": [
+      "FastAPI",
+      "Spring Boot",
+      "Flask",
+      "Node.js",
+      "React",
+      "Typescript",
+      "REST APIs",
+      "Prisma",
+      "HTML5",
+      "CSS3"
+    ],
+    "AI & Machine Learning": [
+      "LangGraph",
+      "Langsmith",
+      "Amazon Bedrock Agentcore",
+      "PyTorch",
+      "TensorFlow",
+      "MLflow",
+      "Scikit-learn",
+      "Transformers"
+    ],
+    "Computer Vision & Deep Learning": [
+      "Sift",
+      "Surf",
+      "ReYOLOv8",
+      "ConvLSTM",
+      "VTEI",
+      "LDH (Light Field Dynamic Homography)"
+    ],
+    "Databases & Big Data": [
+      "Apache Beam",
+      "Airflow",
+      "Pinecone",
+      "FAISS",
+      "PostgreSQL",
+      "MongoDB",
+      "Redis",
+      "Kafka"
+    ],
+    "Cloud, DevOps & Infrastructure": [
+      "AWS (VPC, Bedrock)",
+      "GCP(GKE, vertex AI)",
+      "Azure",
+      "Kubernetes",
+      "Docker",
+      "Terraform",
+      "GitHub Actions",
+      "CI/CD"
+    ],
+    "Tools & Testing": [
+      "Prometheus",
+      "Grafana",
+      "AirSim",
+      "CARLA",
+      "Linux",
+      "Postman",
+      "JIRA",
+      "PyTest",
+      "MatLab",
+      "ArgoCD"
+    ]
+  },
+  "professional_experience": [
+    {
+      "client": "Hartcare",
+      "location": "Hartford, US",
+      "role": "AI Engineer",
+      "duration": "March 2025 - present",
+      "responsibilities": [
+	"Developed robust, cloud-integrated microservices in Python, utilizing advanced orchestration to optimize execution speeds and support the seamless scaling of data-intensive operations.",
+        "Architected a scalable, stateful agentic system using LangGraph and Python, integrating multi-step RAG workflows with GPT-4 and Claude Haiku to process complex operational data with 99.9% uptime.",
+        "Implemented automated monitoring via Prometheus and Grafana to track real-time data and model drift, maintaining a variance of less than 2% across production environments.",
+        "Optimized high-scale search infrastructure by architecting a hybrid-cloud vector retrieval layer (Pinecone/FAISS), achieving a 40% reduction in operational spend and a 22% decrease in latency; implemented semantic caching to eliminate redundant LLM processing.",
+        "Increased modularity by 35% by decoupling a monolithic RAG pipeline using MCP, increasing system debugging efficiency by 20%, and unifying RAG access to predictive models (LSTMs, XGBoost) for analytical forecasting.",
+        "Orchestrated distributed data pipelines using Ray and Airflow to parallelize chunking and vectorization, reducing metadata processing latency by 50% and improving retrieval quality by 25% through optimized indexing.",
+        "Architected agentic frameworks on Amazon Bedrock and AWS EKS, identified operational bottlenecks in memory retrieval, and implemented a Terraform-led IaC strategy to automate infrastructure, reducing CPU utilization by 40% and reducing operational time using GitHub Actions by half."
+      ]
+    },
+    {
+      "client": "Saint Louis University",
+      "location": "Saint Louis, US",
+      "role": "Graduate Research Assistant",
+      "duration": "May 2024 - March 2025",
+      "responsibilities": [
+        "Engineered a high-velocity WAMI detection pipeline by integrating ReYOLOv8, ConvLSTM, and VTEI using LoRA transfer learning; optimized spatiotemporal tracking for high-speed targets while maintaining minimal memory overhead.",
+        "Invented a high-fidelity simulation framework by integrating DroneWIS with Matrix City (CARLA/AirSim), eliminating 90% of physical testing overhead; leveraged C++/Python to model complex aerodynamic constraints for large-scale synthetic data generation.",
+        "Developed a wide-area mapping system utilizing SIFT, SURF, and LDH algorithms to enable seamless feature alignment and real-time panoramic reconstruction across distributed drone swarms",
+        "Optimized model performance by implementing GPU-based quantization, accelerating inference and training speeds by 1.5x while maintaining high accuracy for real-time spatiotemporal object tracking in simulated environments."
+      ]
+    },
+    {
+      "client": "Somish Blockchain Labs",
+      "location": "New Delhi, India",
+      "role": "Software Engineer",
+      "duration": "Dec 2021 - Jun 2023",
+      "responsibilities": [
+        "Engineered a high-performance recommendation engine using Singular Value Decomposition (SVD) and Factorization Machines, delivering personalized content to a million active users. Achieved a 20% increase in user engagement by optimizing real-time inference through a Java-based microservices layer.",
+"Architected scalable Apache Beam ETL pipelines for Snowflake ingestion and optimized FastAPI, GraphQL, and SQLAlchemy query patterns, reducing model data retrieval latency by 25%.",
+"Deployed Spring Boot microservices on GKE using pod locality tuning and private networking, cutting API latency by 30%; utilized Cloud Monitoring to resolve bottlenecks within Kafka consumer groups.",
+"Enhanced system reliability by authoring technical design docs and runbooks, reducing MTTR by 25% through automated MLflow/Jenkins MLOps pipelines."
+
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Farmer Collaboration Communities (Agricom)",
+      "url": "https://github.com/slu-psd-group8-fall2023/Agricom",
+      "description": [
+        "Architected a high-availability agri-tech platform using the MEAN stack, optimizing Node.js services and MongoDB query performance to reduce REST API latency by 30%; implemented TLS/SSL encryption and secure JWT-based authentication to ensure data integrity during real-time information exchange. "
+      ]
+    },
+    {
+      "name": "Wide Area Motion Imagery captured using a multi-fleet UAV virtual camera. (Thesis Project)",
+      "description": [
+        "Engineered a multi-drone imaging pipeline in AirSim utilizing visual servoing and custom C++/Python controllers for synchronized swarm flight; integrated LDH (Light-Field Dynamic Homography) and SIFT/SURF feature matching to achieve seamless wide-area stitching, reducing Mean Pixel Error (MPE) to 1/3 of baseline methods."
+      ]
+    },
+    {
+      "name": "Churn Prediction (Paper published on page no 37)",
+      "url": "https://fredonia.edu/sites/default/files/section/academics/school-business/iba-conference/IBAC%202024%20Program_Procedings_2024-1.pdf",
+      "description": [
+        "Developed a banking churn prediction framework by benchmarking Logistic Regression, KNN, and Naive Bayes against ensemble methods; benchmarked and deployed a Random Forest framework, achieving 80.35% accuracy to drive customer retention strategies; and engineered a feature selection pipeline from transaction metadata and EDA to mitigate overfitting and identify key behavioral triggers for customer retention."
+      ]
+    }
+  ],
+  "education_list": [
+    {
+      "institution": "Saint Louis University",
+      "degree": "Master of Science in Computer Science",
+      "location": "Saint Louis, MO",
+      "duration": "AUG 2023-MAY 2025"
+    }
+  ]
+}
