@@ -95,7 +95,7 @@ export class GeminiService {
 
             RULE 5 — SOFT SKILLS:
             If the original bullet already implies a soft skill (e.g., "coordinated with team"), keep that 
-            language. Do not strip soft skill context when inserting technical keywords.
+            language. Do NOT strip soft skill context when inserting technical keywords.
             Do NOT add soft skill sentences that weren't there — that increases word count.
 
             RULE 6 — NO FABRICATION:
@@ -229,7 +229,7 @@ export class GeminiService {
 
         RULES:
         - Maximum 150 words.
-        - Do NOT invent or fabricate any percentage, metric, or improvement figure unless it appears verbatim in the resume data above.
+        - Do NOTPool invent or fabricate any percentage, metric, or improvement figure unless it appears verbatim in the resume data above.
         - Do NOT default to the most recent role if another experience is more relevant to the question.
         - Write in first person, professional and confident tone.
         - No bullet points — write in flowing prose.
