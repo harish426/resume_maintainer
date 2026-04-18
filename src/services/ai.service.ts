@@ -16,6 +16,8 @@ export class GeminiService {
         1. required_skills: A list of specific technical skills, tools, and technologies.
         2. expected_tasks: Key responsibilities or tasks the candidate will perform.
         3. key_role_attributes: Important qualities or specific focus areas of the role (e.g., "high-availability", "real-time").
+        4. domain_keywords: A list of domain-specific and soft terminology from the JD that are NOT hard technical tools but should appear in resume bullets for ATS alignment. Examples: "underwriting", "marketing", "scalability", "automation", "research", "workflow", "CRM", "AI", "machine learning", "internal tools", "compliance", "data-driven", "real-time", "analytics", "optimization". Extract ALL such terms from the JD.
+        5. soft_skills: A list of interpersonal/soft skills mentioned or implied in the JD. Examples: "communication", "collaboration", "leadership", "teamwork", "problem-solving", "stakeholder management", "mentoring", "cross-functional coordination", "time management", "adaptability", "presentation skills", "client-facing", "documentation". Extract ALL such soft skills from the JD.
 
         JD:
         ${jd}
@@ -33,11 +35,11 @@ export class GeminiService {
       return JSON.parse(text);
     } catch (error) {
       console.error("Error analyzing JD:", error);
-      return { required_skills: [], expected_tasks: [], key_role_attributes: [] };
+      return { required_skills: [], expected_tasks: [], key_role_attributes: [], domain_keywords: [], soft_skills: [] };
     }
   }
 
-  async tailorExperience(job: any, jdRules: any, progressionIdx: number) {
+  async tailorExperience(job: any, jdRules: any, progressionIdx: number, assignedSkills: string[] = []) {
     let progressionInstr = "";
     if (progressionIdx === 1) {
       progressionInstr = "HIGHLIGHT that you learned and mastered key skills REQUIRED by the JD here. Show growth and application of advanced concepts.";
@@ -46,67 +48,122 @@ export class GeminiService {
     }
 
     const currentResps = Array.isArray(job.responsibilities) ? job.responsibilities : [];
+    const duration = job.duration || "";
 
     const prompt = `
-            You are an ATS keyword specialist. Your ONLY job is to make MINIMAL, SURGICAL edits to the 
-            candidate's existing bullet points so they match JD requirements — nothing more.
+            You are an ATS keyword specialist. Your job is to make targeted edits to the
+            candidate's existing bullet points so they cover the ASSIGNED SKILLS for this experience.
 
-            === JD REQUIREMENTS ===
+            === EXPERIENCE TIME PERIOD ===
+            ${duration}
+
+            === JD REQUIREMENTS (for context only) ===
             Required Skills:   ${JSON.stringify(jdRules.required_skills)}
             Expected Tasks:    ${JSON.stringify(jdRules.expected_tasks)}
             Key Attributes:    ${JSON.stringify(jdRules.key_role_attributes)}
+            Domain Keywords:   ${JSON.stringify(jdRules.domain_keywords || [])}
+            Soft Skills:       ${JSON.stringify(jdRules.soft_skills || [])}
 
-            === CANDIDATE'S EXISTING BULLETS (treat these as the source of truth) ===
+            === SKILLS ASSIGNED TO THIS EXPERIENCE (you MUST cover these) ===
+            ${JSON.stringify(assignedSkills)}
+
+            === CANDIDATE'S EXISTING BULLETS (source of truth) ===
             ${JSON.stringify(currentResps)}
 
             Role Progression Note: ${progressionInstr}
 
             === STRICT EDITING RULES ===
 
-            RULE 1 — EDIT OR REFRAME EVERY BULLET FOR JD FIT:
-            For each bullet, decide which of the two paths applies:
+            RULE 1 — THREE PATHS FOR EACH BULLET:
+            Classify each bullet into one of three paths:
 
-            PATH A — GOOD FIT (bullet already relates to a JD requirement):
-              Preserve the core action and context. Make surgical keyword swaps or light edits
-              to align wording with JD terminology. Keep the same approximate length (±5 words).
+            PATH A — STRONG BULLET (bullet is impressive, well-written, or already JD-relevant):
+              KEEP IT MOSTLY THE SAME. Only make small keyword tweaks (±3 words) to align
+              terminology. Do NOT rewrite the sentence structure.
 
-            PATH B — POOR FIT (bullet has little or no connection to any JD requirement):
-              Do NOT leave it unchanged. Instead, REFRAME it:
-              • Keep the candidate's actual underlying activity as a factual anchor (do not fabricate).
-              • Reorient the sentence so it emphasises the aspect of that activity most relevant to the JD.
-              • You may restructure the sentence, change the opening verb, and shift emphasis —
-                but every claim must still be grounded in what the candidate actually did.
-              • Example: original "assisted with internal documentation" + JD focuses on data workflows
-                → reframe as "structured internal documentation to support data reporting workflows".
+            PATH B — EQUIVALENT TOOL SWAP (bullet uses a tool that has a direct JD equivalent):
+              Do a simple 1:1 tool name replacement. For example:
+              • "AWS Lambda" → "Azure Functions" (if JD asks for Azure)
+              • "S3" → "Blob Storage"
+              • "FAISS" → "Pinecone"
+              Do NOT rewrite the surrounding sentence. Just swap the tool name.
+              Only swap tools that are genuine functional equivalents in the same category.
 
-            RULE 2 — WORD COUNT GUIDANCE:
-            Target ±8 words of the input bullet's word count. Reframed bullets (Path B) may use
-            the full range; edited bullets (Path A) should stay tighter (±5 words).
+            PATH C — WEAK/IRRELEVANT BULLET (bullet has no connection to any assigned skill):
+              REPLACE the entire bullet with a new, well-structured bullet that describes
+              how the candidate used one of the ASSIGNED SKILLS in this project's context.
+              • The new bullet MUST match the writing style, tone, and approximate length of
+                the other bullets in this experience.
+              • Ground it in the project domain (e.g., if the project was about recommendation
+                engines, write the new bullet in that context).
+              • Do NOT fabricate metrics or outcomes — keep it realistic.
 
-            RULE 3 — KEYWORD INJECTION:
-            - Use exact JD terminology wherever possible — do not paraphrase skill names.
-            - If Tool A (candidate) and Tool B (JD) are the same category, write "Tool B (via Tool A)".
-            - Prioritise injecting skills that are missing from other bullets to maximise JD coverage.
-            - Never force a keyword into a bullet where it makes no logical sense.
+            RULE 2 — ASSIGNED SKILLS ONLY:
+            You must ONLY integrate skills from the "SKILLS ASSIGNED TO THIS EXPERIENCE" list.
+            Do NOT mention or inject any other JD skills — they are handled by other experiences.
 
-            RULE 4 — TOOL REMAPPING:
-            If candidate used Tool A and JD asks for Tool B (same category), write "Tool B (via Tool A)".
-            This is the only acceptable expansion — it adds ≤4 words.
+            RULE 3 — PRESERVE STRONG BULLETS:
+            Most bullets should go through Path A. Only use Path C for bullets that are clearly
+            the weakest or least relevant to the JD. Prefer keeping the candidate's original
+            writing wherever possible.
 
-            RULE 5 — SOFT SKILLS:
-            If the original bullet already implies a soft skill (e.g., "coordinated with team"), keep that 
-            language. Do NOT strip soft skill context when inserting technical keywords.
-            Do NOT add soft skill sentences that weren't there — that increases word count.
+            RULE 4 — WORD COUNT:
+            Path A: ±3 words of original. Path B: same length. Path C: match average bullet length.
 
-            RULE 6 — NO FABRICATION:
-            Do not add metrics, outcomes, or achievements that are not in the original bullet.
+            RULE 5 — NO FABRICATION:
+            Do not invent metrics, percentages, or outcomes not in the original bullet.
+            For Path C replacement bullets, describe realistic work without fake numbers.
 
-            RULE 7 — SAME BULLET COUNT:
+            RULE 6 — SAME BULLET COUNT:
             Output exactly the same number of bullets as input. No merging, no splitting.
 
-            RULE 8 — HUMAN TONE:
-            Avoid AI giveaway phrases: "leveraged", "spearheaded", "utilized", "synergized", "streamlined".
-            Use plain action verbs the candidate already used.
+            RULE 7 — HUMAN TONE:
+            Avoid AI giveaway phrases: "leveraged", "spearheaded", "utilized", "synergized".
+            Use plain, professional action verbs.
+
+            RULE 8 — DOMAIN KEYWORD SPRINKLING:
+            The "Domain Keywords" list contains soft/domain terms from the JD (e.g., automation,
+            scalability, research, CRM, AI, workflow, marketing, underwriting, etc.).
+            These are NOT hard tools — they are contextual terms that boost ATS matching.
+            - Naturally weave these keywords into existing bullet phrasing wherever they fit.
+            - Do NOT force them — only include where the bullet's context genuinely relates.
+            - Prefer adding them as adjectives, context phrases, or brief clauses.
+            - Example: "Built data pipelines" + domain keyword "automation" → "Built automated data pipelines"
+            - Example: "Tracked model performance" + domain keyword "research" → "Conducted research on model performance tracking"
+            - Spread them across bullets — don't pack all domain keywords into one bullet.
+
+            RULE 9 — SOFT SKILL INTEGRATION:
+            The "Soft Skills" list contains interpersonal skills from the JD (e.g., communication,
+            collaboration, leadership, teamwork, stakeholder management, mentoring, etc.).
+            - Naturally append soft skill demonstrations to bullets where the context genuinely
+              supports it. Add them as brief trailing phrases or clauses at the end of bullet points.
+            - Examples:
+              • "Deployed microservices on GKE" + soft skill "collaboration"
+                → "Deployed microservices on GKE through close collaboration with DevOps and backend teams"
+              • "Architected a scalable pipeline" + soft skill "communication"
+                → "Architected a scalable pipeline, communicating design decisions to cross-functional stakeholders"
+              • "Reduced API latency by 30%" + soft skill "mentoring"
+                → "Reduced API latency by 30% while mentoring junior engineers on performance best practices"
+            - Do NOT create standalone soft skill bullets. Always attach them to existing technical work.
+            - Spread across multiple bullets — do not add soft skills to every bullet, pick 2-3
+              bullets where they fit most naturally.
+            - Keep the additions brief (5-12 words max per soft skill clause).
+
+            RULE 10 — TEMPORAL CONSISTENCY:
+            The experience time period is shown above. Do NOT introduce any tool, framework,
+            or technology that did not exist or was not publicly available during that time period.
+            Use your knowledge of when tools were released:
+            - LangChain: released late 2022, mainstream 2023+
+            - LangGraph: released 2024+
+            - GPT-4: released March 2023
+            - ChatGPT: released November 2022
+            - AWS Bedrock: GA September 2023
+            - Pinecone: available from 2021+
+            - FAISS: available from 2017+
+            - Docker/Kubernetes: available well before 2020
+            If an assigned skill did not exist during this experience's time period, SKIP it entirely.
+            Do NOT mention it in any bullet. It is better to leave a bullet unchanged than to
+            create an anachronism.
 
             OUTPUT: A JSON array of strings — one string per bullet, in the same order as input.
             No markdown fences, no commentary, no explanation. Raw JSON only.
@@ -122,6 +179,81 @@ export class GeminiService {
     } catch (error) {
       console.error("Error tailoring experience:", error);
       return job.responsibilities;
+    }
+  }
+
+  /**
+   * Pre-distributes JD skills across experiences so each skill appears in exactly one experience.
+   * Returns a map: { experienceIndex: ["skill1", "skill2", ...] }
+   */
+  async assignSkillsToExperiences(experiences: any[], requiredSkills: string[]): Promise<Record<number, string[]>> {
+    // Build a summary of each experience for the AI to reason about
+    const experienceSummaries = experiences.map((job, i) => ({
+      index: i,
+      role: job.role || "",
+      client: job.client || "",
+      duration: job.duration || "",
+      bullets: Array.isArray(job.responsibilities) ? job.responsibilities : []
+    }));
+
+    const prompt = `
+        You are an expert resume strategist. Your task is to DISTRIBUTE the JD-required skills
+        across the candidate's work experiences so that:
+        - Each skill appears in EXACTLY ONE experience (no repetition)
+        - Skills are assigned to the experience where they fit most naturally
+        - Skills are distributed as EQUALLY as possible across experiences
+        - If a skill doesn't fit any experience at all, exclude it
+
+        === CANDIDATE'S EXPERIENCES ===
+        ${JSON.stringify(experienceSummaries, null, 2)}
+
+        === JD REQUIRED SKILLS TO DISTRIBUTE ===
+        ${JSON.stringify(requiredSkills)}
+
+        === RULES ===
+        1. Read each experience's bullets carefully to understand what domain and tools it involves.
+        2. Assign each skill to the ONE experience where it fits best based on the work described.
+        3. If multiple experiences could host a skill, prefer the one with fewer assigned skills
+           (to keep distribution even).
+        4. If a skill is already explicitly mentioned in an experience's bullets, assign it there
+           (it just needs minor tweaking, not a full rewrite).
+        5. Skills that are completely unrelated to any experience should be excluded.
+        6. **TEMPORAL CHECK**: Each experience has a "duration" field. Do NOT assign a tool/skill
+           to an experience if that tool did not exist during the experience's time period.
+           For example, LangChain (released late 2022) should NOT be assigned to a role that
+           ended before 2023. Use your knowledge of tool release dates. When in doubt, assign
+           the skill to a more recent experience instead.
+
+        === OUTPUT FORMAT ===
+        Return ONLY a JSON object where keys are experience indices (as strings) and values are
+        arrays of skill names assigned to that experience.
+        Example: {"0": ["Kafka", "Docker"], "1": [], "2": ["Dialogflow", "PostgreSQL"]}
+
+        No markdown fences, no commentary. Raw JSON only.
+        `;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      let text = (await result.response).text().trim();
+      if (text.startsWith("```")) {
+        text = text.replace(/```json\n?|\n?```/g, "").trim();
+      }
+      const parsed = JSON.parse(text);
+
+      // Normalize: ensure every experience index has an entry
+      const skillMap: Record<number, string[]> = {};
+      for (let i = 0; i < experiences.length; i++) {
+        skillMap[i] = parsed[String(i)] || [];
+      }
+      return skillMap;
+    } catch (error) {
+      console.error("Error assigning skills to experiences:", error);
+      // Fallback: no assigned skills, tailoring proceeds without skill constraints
+      const fallback: Record<number, string[]> = {};
+      for (let i = 0; i < experiences.length; i++) {
+        fallback[i] = [];
+      }
+      return fallback;
     }
   }
 
@@ -255,17 +387,24 @@ export class GeminiService {
     // Tailor Skills
     tailoredData.technologies = await this.tailorSkills(tailoredData.technologies, jdRules.required_skills);
 
-    // Tailor Experience (First and third as per Python logic)
+    // Phase 1: Pre-distribute JD skills across experiences (no repetition)
+    const skillMap = await this.assignSkillsToExperiences(
+      tailoredData.professional_experience,
+      jdRules.required_skills
+    );
+
+    // Phase 2: Tailor each experience with only its assigned skills
     for (let i = 0; i < tailoredData.professional_experience.length; i++) {
       const job = tailoredData.professional_experience[i];
-      const newResps = await this.tailorExperience(job, jdRules, i + 1);
+      const assignedSkills = skillMap[i] || [];
+      const newResps = await this.tailorExperience(job, jdRules, i + 1, assignedSkills);
       tailoredData.professional_experience[i].responsibilities = newResps;
     }
 
     // Tailor Projects
     for (let i = 0; i < tailoredData.projects.length; i++) {
       const proj = tailoredData.projects[i];
-      const newResps = await this.tailorExperience({ responsibilities: proj.description || [] }, jdRules, 0);
+      const newResps = await this.tailorExperience({ responsibilities: proj.description || [] }, jdRules, 0, []);
       tailoredData.projects[i].description = newResps;
     }
 
