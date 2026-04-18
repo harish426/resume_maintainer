@@ -21,8 +21,8 @@ Your base resume must be placed exactly here:
 
 ### 2. How to update
 If you want to change your base resume data:
-1. Edit the `base_resume.json` file.
-2. Run `npm run build` in the `frontend` directory.
+1. Edit the `base_resume.json` file in resume_maintainer/src/data/resumes/base_resume.
+2. Run `npm run build` in the `resume_maintainer` directory.
 3. Reload the extension in Chrome.
 
 ### 3. JSON Structure Template
