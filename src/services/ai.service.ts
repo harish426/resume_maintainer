@@ -10,6 +10,89 @@ export class GeminiService {
     this.model = this.genAI.getGenerativeModel({ model: "gemini-flash-latest" });
   }
 
+  /**
+   * Uses Gemini to understand the user's natural language input and extract:
+   * - intent: tailor | cover_letter | question
+   * - directives: specific customization instructions (skills to add, focus areas, etc.)
+   * - question: the actual interview question text (if intent is "question")
+   */
+  async detectIntent(userInput: string): Promise<{
+    intent: "tailor" | "cover_letter" | "question";
+    directives: string[];
+    question: string;
+  }> {
+    const prompt = `
+        You are an intent classifier for a resume assistant tool.
+        The user has typed the following instruction:
+
+        "${userInput}"
+
+        Your job is to determine:
+        1. **intent** — What does the user want?
+           - "tailor" = They EXPLICITLY want to generate/tailor/customize their resume.
+             ONLY classify as "tailor" if the user uses EXPLICIT resume generation commands like:
+             "generate resume", "tailor resume", "tailor", "generate", "go", "create resume",
+             "build resume", "make resume", "update resume", or similar SHORT commands.
+             If the user adds skills/directives like "add Python" or "focus on data engineering",
+             that is ALSO a tailor intent.
+             **IMPORTANT: If the input looks like a question from a job application form,
+             interview question, or any question someone is asking the candidate — it is NOT
+             a tailor intent. It is a "question" intent.**
+           - "cover_letter" = They want a cover letter written. Only if they explicitly mention
+             "cover letter".
+           - "question" = This is the DEFAULT. Any question, prompt, or text that is NOT an
+             explicit resume generation command should be classified as "question".
+             This includes:
+             * Interview questions ("Tell me about yourself", "Why do you want this role?")
+             * Application form questions ("Describe your experience with...")
+             * Conversational questions ("Would you like to know about something?")
+             * Open-ended prompts ("What interests you about this position?")
+             * ANY pasted text that looks like a question from a recruiter or application
+
+        2. **directives** — Extract ANY specific customization instructions as an array of short, clear strings.
+           Only relevant when intent is "tailor". Examples:
+           - "add Python and AWS skills" → ["Add Python skills", "Add AWS skills"]
+           - "make it more relevant to data engineering" → ["Focus on data engineering domain"]
+           - "emphasize leadership and cloud experience" → ["Emphasize leadership experience", "Emphasize cloud experience"]
+           - "change stream to backend development" → ["Shift focus to backend development"]
+           - "add more DevOps related content" → ["Add more DevOps related content"]
+           - "generate resume" (no extra instructions) → []
+           If there are no extra instructions beyond the basic intent, return an empty array.
+
+        3. **question** — If the intent is "question", extract the actual question text.
+           Otherwise, return an empty string.
+
+        Return ONLY a JSON object with keys: "intent", "directives", "question".
+        No markdown fences, no commentary. Raw JSON only.
+        `;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      let text = (await result.response).text().trim();
+      if (text.startsWith("```")) {
+        text = text.replace(/```json\n?|\n?```/g, "").trim();
+      }
+      const parsed = JSON.parse(text);
+      return {
+        intent: parsed.intent || "question",
+        directives: Array.isArray(parsed.directives) ? parsed.directives : [],
+        question: parsed.question || ""
+      };
+    } catch (error) {
+      console.error("Error detecting intent:", error);
+      // Fallback to simple keyword matching — default to "question" unless explicit resume command
+      const lower = userInput.toLowerCase().trim();
+      let intent: "tailor" | "cover_letter" | "question" = "question";
+      const tailorKeywords = ["generate resume", "tailor resume", "tailor", "generate", "go", "create resume", "build resume", "make resume", "update resume"];
+      if (tailorKeywords.some(kw => lower === kw || lower.startsWith(kw + " "))) {
+        intent = "tailor";
+      } else if (lower.includes("cover letter")) {
+        intent = "cover_letter";
+      }
+      return { intent, directives: [], question: intent === "question" ? userInput : "" };
+    }
+  }
+
   async analyzeJD(jd: string) {
     const prompt = `
         Analyze the following Job Description (JD) and extract:
@@ -39,7 +122,125 @@ export class GeminiService {
     }
   }
 
-  async tailorExperience(job: any, jdRules: any, progressionIdx: number, assignedSkills: string[] = []) {
+  /**
+   * Checks whether the JD's domain overlaps with the SLU research experience
+   * (data processing, deep learning, computer vision, object detection, etc.).
+   * If so, the SLU experience should only get light adjustments, not a full rewrite.
+   */
+  private isJDAlignedWithResearchDomain(jdRules: any): boolean {
+    const researchDomainKeywords = [
+      'deep learning', 'computer vision', 'object detection', 'image processing',
+      'data processing', 'machine learning', 'neural network', 'cnn', 'yolo',
+      'image recognition', 'video analytics', 'tracking', 'perception',
+      'autonomous', 'drone', 'uav', 'simulation', 'pytorch', 'tensorflow',
+      'convolutional', 'lstm', 'transfer learning', 'feature extraction',
+      'model training', 'inference', 'gpu', 'quantization', 'stitching',
+      'panoramic', 'spatiotemporal', 'convlstm', 'lora', 'fine-tuning',
+      'research', 'aerial', 'surveillance', 'motion imagery'
+    ];
+
+    const allJDText = [
+      ...(jdRules.required_skills || []),
+      ...(jdRules.expected_tasks || []),
+      ...(jdRules.key_role_attributes || []),
+      ...(jdRules.domain_keywords || [])
+    ].join(' ').toLowerCase();
+
+    const matchCount = researchDomainKeywords.filter(kw => allJDText.includes(kw)).length;
+    return matchCount >= 2; // At least 2 domain keyword matches to consider it aligned
+  }
+
+  /**
+   * Checks whether the JD is primarily a software engineering role.
+   * Used to inject backend emphasis into the SLU experience when it gets fully tailored.
+   */
+  private isJDSoftwareEngineering(jdRules: any): boolean {
+    const sweKeywords = [
+      'software engineer', 'software developer', 'backend', 'back-end',
+      'full stack', 'fullstack', 'full-stack', 'web developer', 'api',
+      'microservices', 'rest api', 'restful', 'spring boot', 'node.js',
+      'fastapi', 'flask', 'django', 'express', 'graphql', 'server-side',
+      'software development', 'application development', 'web services',
+      'distributed systems', 'system design', 'scalable services'
+    ];
+
+    const allJDText = [
+      ...(jdRules.required_skills || []),
+      ...(jdRules.expected_tasks || []),
+      ...(jdRules.key_role_attributes || []),
+      ...(jdRules.domain_keywords || [])
+    ].join(' ').toLowerCase();
+
+    const matchCount = sweKeywords.filter(kw => allJDText.includes(kw)).length;
+    return matchCount >= 2;
+  }
+
+  /**
+   * Light tailoring for the SLU research experience — only minor keyword adjustments
+   * to match JD terminology. Does NOT change the core stream, sentence structure,
+   * or research focus. Used when the JD already aligns with the research domain.
+   */
+  async tailorExperienceLightly(job: any, jdRules: any) {
+    const currentResps = Array.isArray(job.responsibilities) ? job.responsibilities : [];
+    const duration = job.duration || '';
+
+    const prompt = `
+            You are making MINIMAL adjustments to a Graduate Research Assistant's bullet points.
+            This experience is about computer vision, deep learning, drone/UAV systems, and
+            simulation research at a university. The JD already aligns with this domain.
+
+            === EXPERIENCE TIME PERIOD ===
+            ${duration}
+
+            === JD REQUIREMENTS (for reference only) ===
+            Required Skills:   ${JSON.stringify(jdRules.required_skills)}
+            Expected Tasks:    ${JSON.stringify(jdRules.expected_tasks)}
+            Domain Keywords:   ${JSON.stringify(jdRules.domain_keywords || [])}
+
+            === CANDIDATE'S EXISTING BULLETS (these are the PRIMARY source of truth) ===
+            ${JSON.stringify(currentResps)}
+
+            === STRICT RULES ===
+
+            1. DO NOT CHANGE THE STREAM: The core focus (computer vision, deep learning,
+               drone research, simulation, object tracking, image stitching) MUST stay the same.
+               Do NOT rewrite bullets to be about a different domain.
+
+            2. MINOR KEYWORD ALIGNMENT ONLY: You may make small edits (±3 words per bullet)
+               to naturally include JD terminology WHERE it genuinely fits. For example:
+               - If JD mentions "real-time inference" and a bullet already discusses inference,
+                 add "real-time" as an adjective.
+               - If JD mentions "edge deployment" and a bullet discusses model optimization,
+                 you may briefly reference edge deployment context.
+
+            3. PRESERVE SENTENCE STRUCTURE: Do NOT rearrange, merge, split, or significantly
+               rewrite any bullet. The sentence formation must stay intact.
+
+            4. PRESERVE ALL TECHNICAL DETAILS: Keep all specific tools, algorithms, metrics,
+               and achievements exactly as written (ReYOLOv8, ConvLSTM, VTEI, LoRA, SIFT,
+               SURF, LDH, DroneWIS, Matrix City, CARLA, AirSim, C++/Python, etc.).
+
+            5. SAME BULLET COUNT: Output exactly the same number of bullets.
+
+            6. If NO meaningful keyword alignment is possible for a bullet, return it UNCHANGED.
+
+            OUTPUT: A JSON array of strings — one per bullet, same order. Raw JSON only.
+            `;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      let text = (await result.response).text().trim();
+      if (text.startsWith('```')) {
+        text = text.replace(/```json\n?|\n?```/g, '').trim();
+      }
+      return JSON.parse(text);
+    } catch (error) {
+      console.error('Error lightly tailoring SLU experience:', error);
+      return job.responsibilities;
+    }
+  }
+
+  async tailorExperience(job: any, jdRules: any, progressionIdx: number, assignedSkills: string[] = [], userDirectives: string[] = []) {
     let progressionInstr = "";
     if (progressionIdx === 1) {
       progressionInstr = "HIGHLIGHT that you learned and mastered key skills REQUIRED by the JD here. Show growth and application of advanced concepts.";
@@ -71,6 +272,17 @@ export class GeminiService {
             ${JSON.stringify(currentResps)}
 
             Role Progression Note: ${progressionInstr}
+
+            ${userDirectives.length > 0 ? `=== USER CUSTOMIZATION DIRECTIVES (MUST follow these) ===
+            The user has given the following specific instructions. You MUST incorporate
+            these into your editing decisions. They take priority over default behavior:
+            ${userDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n            ')}
+
+            For example:
+            - If they say "Add Python skills", ensure Python is mentioned naturally in bullets.
+            - If they say "Focus on data engineering", bias your edits toward data pipeline/ETL context.
+            - If they say "Emphasize leadership", add leadership-related clauses to strong bullets.
+            ` : ''}
 
             === STRICT EDITING RULES ===
 
@@ -121,7 +333,17 @@ export class GeminiService {
             Avoid AI giveaway phrases: "leveraged", "spearheaded", "utilized", "synergized".
             Use plain, professional action verbs.
 
-            RULE 8 — DOMAIN KEYWORD SPRINKLING:
+            RULE 8 — SENTENCE FORMATION QUALITY:
+            Every bullet must clearly communicate WHAT was done, HOW it was done, and WHY it
+            matters. Each sentence should read as a self-contained accomplishment.
+            - BAD: "Worked on data processing tasks using various tools."
+            - GOOD: "Built automated data ingestion pipelines using Apache Beam and Airflow,
+              processing 2M+ daily records for downstream ML model training."
+            - The sentence structure should make the reader understand the ACTUAL work performed,
+              not vague descriptions. Be specific about the action, the technology, and the impact.
+            - Ensure each bullet tells a clear story: ACTION + TECHNOLOGY/METHOD + CONTEXT/RESULT.
+
+            RULE 9 — DOMAIN KEYWORD SPRINKLING:
             The "Domain Keywords" list contains soft/domain terms from the JD (e.g., automation,
             scalability, research, CRM, AI, workflow, marketing, underwriting, etc.).
             These are NOT hard tools — they are contextual terms that boost ATS matching.
@@ -129,10 +351,9 @@ export class GeminiService {
             - Do NOT force them — only include where the bullet's context genuinely relates.
             - Prefer adding them as adjectives, context phrases, or brief clauses.
             - Example: "Built data pipelines" + domain keyword "automation" → "Built automated data pipelines"
-            - Example: "Tracked model performance" + domain keyword "research" → "Conducted research on model performance tracking"
             - Spread them across bullets — don't pack all domain keywords into one bullet.
 
-            RULE 9 — SOFT SKILL INTEGRATION:
+            RULE 10 — SOFT SKILL INTEGRATION:
             The "Soft Skills" list contains interpersonal skills from the JD (e.g., communication,
             collaboration, leadership, teamwork, stakeholder management, mentoring, etc.).
             - Naturally append soft skill demonstrations to bullets where the context genuinely
@@ -142,14 +363,11 @@ export class GeminiService {
                 → "Deployed microservices on GKE through close collaboration with DevOps and backend teams"
               • "Architected a scalable pipeline" + soft skill "communication"
                 → "Architected a scalable pipeline, communicating design decisions to cross-functional stakeholders"
-              • "Reduced API latency by 30%" + soft skill "mentoring"
-                → "Reduced API latency by 30% while mentoring junior engineers on performance best practices"
             - Do NOT create standalone soft skill bullets. Always attach them to existing technical work.
-            - Spread across multiple bullets — do not add soft skills to every bullet, pick 2-3
-              bullets where they fit most naturally.
+            - Spread across multiple bullets — pick 2-3 bullets where they fit most naturally.
             - Keep the additions brief (5-12 words max per soft skill clause).
 
-            RULE 10 — TEMPORAL CONSISTENCY:
+            RULE 11 — TEMPORAL CONSISTENCY:
             The experience time period is shown above. Do NOT introduce any tool, framework,
             or technology that did not exist or was not publicly available during that time period.
             Use your knowledge of when tools were released:
@@ -186,7 +404,7 @@ export class GeminiService {
    * Pre-distributes JD skills across experiences so each skill appears in exactly one experience.
    * Returns a map: { experienceIndex: ["skill1", "skill2", ...] }
    */
-  async assignSkillsToExperiences(experiences: any[], requiredSkills: string[]): Promise<Record<number, string[]>> {
+  async assignSkillsToExperiences(experiences: any[], requiredSkills: string[], userDirectives: string[] = []): Promise<Record<number, string[]>> {
     // Build a summary of each experience for the AI to reason about
     const experienceSummaries = experiences.map((job, i) => ({
       index: i,
@@ -224,6 +442,13 @@ export class GeminiService {
            ended before 2023. Use your knowledge of tool release dates. When in doubt, assign
            the skill to a more recent experience instead.
 
+        ${userDirectives.length > 0 ? `=== USER CUSTOMIZATION DIRECTIVES ===
+        The user has given these specific instructions. Consider them when distributing skills:
+        ${userDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n        ')}
+        If the user mentions specific skills or domains, ensure those skills are prioritized
+        and placed in the most impactful (usually most recent) experience.
+        ` : ''}
+
         === OUTPUT FORMAT ===
         Return ONLY a JSON object where keys are experience indices (as strings) and values are
         arrays of skill names assigned to that experience.
@@ -257,7 +482,7 @@ export class GeminiService {
     }
   }
 
-  async tailorSkills(currentSkills: any, jdSkills: string[]) {
+  async tailorSkills(currentSkills: any, jdSkills: string[], userDirectives: string[] = []) {
     const prompt = `
         Merge the following "JD Required Skills" into the "Current Skills" dictionary.
         
@@ -274,6 +499,7 @@ export class GeminiService {
         - Place new tools/software into the most appropriate existing category and don't repeat the same skill in multiple categories.
         - Avoid duplicates.
         - Maintain previous skills; do not remove any existing data.
+        ${userDirectives.length > 0 ? `- USER DIRECTIVES (prioritize these):\n        ${userDirectives.map((d, i) => `  ${i + 1}. ${d}`).join('\n        ')}\n        If the user asks to add specific skills, ensure those skills are added to the appropriate categories even if they are not in the JD Required Skills list.` : ''}
         - Output ONLY the updated JSON dictionary.
         `;
 
@@ -290,7 +516,7 @@ export class GeminiService {
     }
   }
 
-  async generateCoverLetter(resumeData: ResumeData, jd: string) {
+  async generateCoverLetter(resumeData: ResumeData, jd: string, userDirectives: string[] = []) {
     const name = resumeData.personal_info.name;
     const prompt = `
         You are an expert career coach. Write a professional, compelling cover letter for the candidate below.
@@ -321,6 +547,11 @@ export class GeminiService {
         - Do NOT focus exclusively on the most recent job. Select the experiences and projects that best fit the JD.
         - Length: 3-4 paragraphs, concise and specific.
         - Tone: Confident, professional, enthusiastic but grounded in real experience.
+        ${userDirectives.length > 0 ? `
+        === USER CUSTOMIZATION DIRECTIVES (MUST follow these) ===
+        ${userDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n        ')}
+        Incorporate these directives into the cover letter. For example, if they say
+        "emphasize leadership", ensure leadership stories are prominently featured.` : ''}
         `;
 
     try {
@@ -331,40 +562,68 @@ export class GeminiService {
     }
   }
 
-  async answerQuestion(resumeData: ResumeData, jd: string, question: string) {
+  async answerQuestion(resumeData: ResumeData, jd: string, question: string, userDirectives: string[] = []) {
+    const candidateName = resumeData.personal_info?.name || "the candidate";
     const prompt = `
-        You are a career coach helping a candidate answer an interview question.
+        You ARE ${candidateName} — a real person responding to a question during a job application
+        or conversation with a recruiter. You are NOT an AI assistant or career coach.
+        Respond exactly as this person would — naturally, casually-professional, and human.
 
-        Interview Question: "${question}"
+        Question: "${question}"
 
-        Full Resume (read ALL sections carefully):
+        Your resume (your actual background — use ONLY when the question asks about your experience):
         ${JSON.stringify(resumeData, null, 2)}
 
-        Job Description context:
+        Job Description (context for the role you're applying to):
         ${jd}
 
-        STEP 1 — RELEVANCE SCAN (do this silently, do NOT include it in the output):
-        - Read every entry in professional_experience AND projects AND education.
-        - Map the question's theme to the most relevant experience:
-            * Questions about personal challenge, difficult problem, or perseverance  → look at thesis/research projects first.
-            * Questions about teamwork or collaboration → look at group projects or internships.
-            * Questions about technical skills or pipelines → pick the experience that actually used those skills.
-            * Questions about why this company / motivation → draw on education goals and most relevant projects.
-        - Choose the SINGLE most relevant story. Do NOT always default to the most recent job.
+        === HOW TO RESPOND ===
 
-        STEP 2 — WRITE THE ANSWER using only the experience you selected:
-        1. Briefly state WHAT the situation/project was (1-2 sentences, name it specifically).
-        2. Explain the challenge or task you faced.
-        3. Describe what YOU did to address it.
-        4. State the outcome in natural language — describe what was achieved, learned, or delivered.
-        5. Connect it briefly to what this role needs.
+        STEP 1 — CLASSIFY THE QUESTION TYPE (do this silently):
 
-        RULES:
-        - Maximum 150 words.
-        - Do NOTPool invent or fabricate any percentage, metric, or improvement figure unless it appears verbatim in the resume data above.
-        - Do NOT default to the most recent role if another experience is more relevant to the question.
-        - Write in first person, professional and confident tone.
-        - No bullet points — write in flowing prose.
+        TYPE A — CONVERSATIONAL / OPEN-ENDED:
+        Questions like: "Would you like to know about something?", "Do you have any questions?",
+        "Is there anything else you'd like to share?", "What questions do you have for us?",
+        "Would you like to add anything?"
+        → Respond like a REAL human candidate would. Ask genuine questions back:
+          • "When can I expect to hear back about next steps?"
+          • "What does a typical day look like for this role?"
+          • "How large is the team I'd be working with?"
+          • "What's the tech stack the team is currently using?"
+          • "Is there flexibility for remote work?"
+          Pick 1-2 natural questions that a real person would ask. Be genuine, curious, and warm.
+
+        TYPE B — EXPERIENCE / SKILLS QUESTION:
+        Questions that ask about your background, skills, projects, challenges, achievements.
+        → Pull from your resume data. Pick the MOST relevant story (not always the most recent).
+          Use STAR format naturally (situation, task, action, result) but in flowing prose.
+          Be specific — name the project, the tech, what you actually did.
+
+        TYPE C — MOTIVATION / FIT QUESTION:
+        Questions like: "Why do you want this role?", "Why this company?", "What interests you?"
+        → Be genuine and enthusiastic. Connect your actual background to what excites you about
+          this specific role/company. Don't be generic — reference specifics from the JD.
+
+        TYPE D — LOGISTICS / SIMPLE QUESTIONS:
+        Questions like: "Are you available for an interview?", "What is your expected salary?",
+        "When can you start?", "Are you authorized to work in...?"
+        → Give a straightforward, friendly human answer. Be direct.
+
+        === PERSONA RULES ===
+        - Write in FIRST PERSON as ${candidateName}.
+        - Sound like a real human texting or emailing a recruiter — not a robot, not an essay.
+        - Use natural language: contractions ("I'm", "I've", "I'd"), casual-professional tone.
+        - Keep responses concise — most answers should be 50-150 words max.
+        - For conversational questions (Type A), keep it brief — 1-3 sentences is fine.
+        - Do NOT start every answer with "I" — vary your sentence openings.
+        - Do NOT use phrases like "leveraged", "spearheaded", "utilized" — talk like a normal person.
+        - Do NOT fabricate any metrics, percentages, or numbers not in your resume.
+        - If the question is vague or doesn't need a long answer, keep it short and human.
+        - Show personality — it's okay to express genuine excitement, curiosity, or humor.
+        ${userDirectives.length > 0 ? `
+        === USER CUSTOMIZATION DIRECTIVES (MUST follow these) ===
+        ${userDirectives.map((d, i) => `${i + 1}. ${d}`).join('\n        ')}
+        Incorporate these directives into your answer.` : ''}
         `;
 
     try {
@@ -375,7 +634,7 @@ export class GeminiService {
     }
   }
 
-  async processResumeTailoring(resumeData: ResumeData, jd: string) {
+  async processResumeTailoring(resumeData: ResumeData, jd: string, userDirectives: string[] = []): Promise<{ tailoredData: any; jdRules: any }> {
     const jdRules = await this.analyzeJD(jd);
     const tailoredData = JSON.parse(JSON.stringify(resumeData || {})); // Deep copy with fallback
 
@@ -384,30 +643,67 @@ export class GeminiService {
     tailoredData.professional_experience = tailoredData.professional_experience || [];
     tailoredData.projects = tailoredData.projects || [];
 
-    // Tailor Skills
-    tailoredData.technologies = await this.tailorSkills(tailoredData.technologies, jdRules.required_skills);
+    // Tailor Skills (with user directives)
+    tailoredData.technologies = await this.tailorSkills(tailoredData.technologies, jdRules.required_skills, userDirectives);
 
-    // Phase 1: Pre-distribute JD skills across experiences (no repetition)
+    // Phase 1: Pre-distribute JD skills across experiences (with user directives)
     const skillMap = await this.assignSkillsToExperiences(
       tailoredData.professional_experience,
-      jdRules.required_skills
+      jdRules.required_skills,
+      userDirectives
     );
 
-    // Phase 2: Tailor each experience with only its assigned skills
+    // Phase 2: Tailor each experience with only its assigned skills (with user directives)
+    // SLU experience (index 1): ONLY touch it if JD asks for deep learning / computer vision.
+    // Otherwise, leave it completely unchanged.
+    const sluIndex = 1; // Saint Louis University Graduate Research Assistant
+    const jdAlignsWithSLU = this.isJDAlignedWithResearchDomain(jdRules);
+
     for (let i = 0; i < tailoredData.professional_experience.length; i++) {
       const job = tailoredData.professional_experience[i];
       const assignedSkills = skillMap[i] || [];
-      const newResps = await this.tailorExperience(job, jdRules, i + 1, assignedSkills);
-      tailoredData.professional_experience[i].responsibilities = newResps;
+
+      if (i === sluIndex && jdAlignsWithSLU) {
+        // JD asks for DL/CV — apply light keyword adjustments only (preserve the stream)
+        console.log('SLU experience: JD requires DL/CV — applying light tailoring');
+        const newResps = await this.tailorExperienceLightly(job, jdRules);
+        tailoredData.professional_experience[i].responsibilities = newResps;
+      } else if (i === sluIndex) {
+        // JD is NOT about DL/CV — leave SLU experience completely untouched
+        console.log('SLU experience: JD does not require DL/CV — skipping, keeping original');
+      } else {
+        // First (index 0) and last (index 2) experiences — always tailor normally
+        const newResps = await this.tailorExperience(job, jdRules, i + 1, assignedSkills, userDirectives);
+        tailoredData.professional_experience[i].responsibilities = newResps;
+      }
     }
 
-    // Tailor Projects
+    // Tailor Projects (with user directives)
     for (let i = 0; i < tailoredData.projects.length; i++) {
       const proj = tailoredData.projects[i];
-      const newResps = await this.tailorExperience({ responsibilities: proj.description || [] }, jdRules, 0, []);
+      const newResps = await this.tailorExperience({ responsibilities: proj.description || [] }, jdRules, 0, [], userDirectives);
       tailoredData.projects[i].description = newResps;
     }
 
-    return tailoredData;
+    return { tailoredData, jdRules };
+  }
+
+  /**
+   * Follow-up tailoring: only re-processes the most recent experience (index 0)
+   * with the new user directives. All other experiences, projects, and skills
+   * remain unchanged from the previous tailoring pass.
+   */
+  async processFollowUpTailoring(previousTailoredData: any, jdRules: any, userDirectives: string[]): Promise<{ tailoredData: any; jdRules: any }> {
+    const tailoredData = JSON.parse(JSON.stringify(previousTailoredData)); // Deep copy
+
+    // Only re-tailor the most recent experience (index 0) with new directives
+    if (tailoredData.professional_experience && tailoredData.professional_experience.length > 0) {
+      const job = tailoredData.professional_experience[0];
+      const assignedSkills = jdRules.required_skills || [];
+      const newResps = await this.tailorExperience(job, jdRules, 1, assignedSkills, userDirectives);
+      tailoredData.professional_experience[0].responsibilities = newResps;
+    }
+
+    return { tailoredData, jdRules };
   }
 }

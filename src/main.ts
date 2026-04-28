@@ -29,6 +29,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // but we use the file's data for the current session.
     await chrome.storage.local.set({ resumeProfile: currentProfile });
 
+    // Track previous tailoring state for follow-up instructions
+    let lastTailoredData: any = null;
+    let lastJdRules: any = null;
+
     settingsBtn.onclick = () => {
         homeView.classList.toggle('hidden');
         settingsView.classList.toggle('hidden');
@@ -69,25 +73,43 @@ document.addEventListener('DOMContentLoaded', async () => {
             const aiService = new GeminiService(apiKey);
             const docxService = new DocxService();
 
-            // Detect Intent
-            let intent = "tailor";
-            if (question.toLowerCase().includes("cover letter")) intent = "cover_letter";
-            else if (question.includes("?") || question.length > 20) intent = "question";
+            // AI-powered Intent Detection
+            showStatus('Understanding your request...', '');
+            const { intent, directives, question: extractedQuestion } = await aiService.detectIntent(question);
+
+            if (directives.length > 0) {
+                console.log('User directives detected:', directives);
+            }
 
             if (intent === "tailor") {
-                showStatus('Tailoring resume...', '');
-                const tailoredData = await aiService.processResumeTailoring(currentProfile, jd);
+                let tailoredData: any;
+                let jdRules: any;
+
+                if (directives.length > 0 && lastTailoredData && lastJdRules) {
+                    // Follow-up: only re-tailor the most recent experience
+                    showStatus('Applying changes to most recent experience...', '');
+                    ({ tailoredData, jdRules } = await aiService.processFollowUpTailoring(lastTailoredData, lastJdRules, directives));
+                } else {
+                    // First run: full tailoring pipeline
+                    showStatus('Tailoring resume...', '');
+                    ({ tailoredData, jdRules } = await aiService.processResumeTailoring(currentProfile, jd, directives));
+                }
+
+                // Store for follow-up use
+                lastTailoredData = tailoredData;
+                lastJdRules = jdRules;
+
                 const blob = await docxService.generateResume(tailoredData);
                 showFileResult(blob, company, position, jd);
                 showStatus('Resume tailored successfully!', 'success');
             } else if (intent === "cover_letter") {
                 showStatus('Writing cover letter...', '');
-                const content = await aiService.generateCoverLetter(currentProfile, jd);
+                const content = await aiService.generateCoverLetter(currentProfile, jd, directives);
                 showTextResult(content);
                 showStatus('Cover letter generated!', 'success');
             } else {
                 showStatus('Answering question...', '');
-                const content = await aiService.answerQuestion(currentProfile, jd, question);
+                const content = await aiService.answerQuestion(currentProfile, jd, extractedQuestion, directives);
                 showTextResult(content);
                 showStatus('Answer generated!', 'success');
             }
